@@ -5,34 +5,45 @@
 
 create or replace procedure alquilar(arg_NIF_cliente varchar,
   arg_matricula varchar, arg_fecha_ini date, arg_fecha_fin date) is
-  
-Importe_mal EXCEPTION;
-varNumvehiculos integer;
+   e_invalid_cliente EXCEPTION;
+   e_invalid_vehiculo EXCEPTION;
+   e_invalid_reserva EXCEPTION;
+  Importe_mal EXCEPTION;
+  v_countReservas number := 0;
+ v_countClientes number := 0;
+varNumvehiculos number := 0;
 begin
 --Punto(1) Se Comprueba que la fecha de inicio pasada como argumento no es posterior a la fecha fin En caso contrario devolverá el error -20003 con el mensaje 'El numero de dias sera mayor que cero.'
 if(arg_fecha_ini< arg_fecha_fin) then
+ dbms_output.put_line( 'inicio');
 -- Punto 2 SELECT con un par de joins para saber el valor del modelo del vehículo pasado como argumento, el prcio de alquilarlo diariamente, la capacidad de su depósito de combustible, el tipo de combustible que utiliza y el precio por litro del mismo
-select count(*) into varNumvehiculos, vehiculos.matricula, modelos.nombre, modelos.precio_cada_dia, modelos.capacidad_deposito,modelos.tipo_combustible,precio_combustible.precio_por_litro
-from vehiculos 
+select count(*) INTO  varNumvehiculos
+from vehiculos
 inner join modelos
 on 
-modelos.id_modelo = vehiculos.idmodelo
+modelos.id_modelo = vehiculos.id_modelo
 inner join precio_combustible
 on 
-modelos.tipo_combustible = precio_combustible.tipo_combustible;
+modelos.tipo_combustible = precio_combustible.tipo_combustible
+ where vehiculos.matricula = arg_matricula;
+
+
 
 --Del resultado de esta SELECT deberías ser capaz de deducir si el vehículo existe. Si no existiese has de devolver el error -20002 con el mensaje 'Vehiculo inexistente.'.
 
 if varNumvehiculos = 0 then
+
 rollback;
-raise_application_error(-2002, 'Producto inexistente');
+RAISE e_invalid_vehiculo;
 end if;  
  --punto 3
-if (select idreserva from reserva where arg_matricula=reserva.matricula )is null
+ select count(*) into v_countReservas from reservas where arg_matricula=reservas.matricula;
+ 
+if v_countReservas != 0
 then
-raise_application_error(-2004, 'El vehiculo no esta
-disponible.');
+Raise e_invalid_reserva;
 else
+ dbms_output.put_line( 'reserva disponible');
 --punto 4
 --el resultado de la SELECT del paso anterior ¿sigue siendo fiable en este paso?:
 --en este paso no es fiable la informacion del cliente pues no se encuentra bloqueada dicha tabla por lo cual puede estar ocurriendo una actualizacion en otro punto
@@ -40,38 +51,45 @@ else
 -- si no se bloquea las tablas mientras ocurren los procesos de insercion y actualizacion que estan concatenadas con otras tablas, se puede dar q en otro punto y en el mismo instante de tiempo se haga una reserva q cumpla con los parametros q se estan revisando y no se tenga en cuenta dicha infformacion en este select
 --En este paso otra transacción concurrente cualquiera ¿podría hacer INSERT o UPDATE sobre reservas y habernos añadido una reserva no recogida en esa SELECTque fuese incompatible con nuestra reserva?, ¿por qué?.
 --si la transaccion no se cierra desde el comienzo se puede estar dividiendo en varias, y se estaria rompiendo la consistencia de los datos, pero en este punto dado que en el punto anterior se realizo el bloqueo del select del vehiculo no se tendrian reservas incompatibles con nuestro proceso.
-if(select NIF from clientes where arg_NIF_cliente=clientes.NIF)IS NULL
+select count(*) into v_countClientes from clientes where arg_NIF_cliente=clientes.NIF;
+if v_countClientes = 0
 then
-raise_application_error(-2001, 'cliente inexistente');
+RAISE  e_invalid_cliente;
 
 else
+ dbms_output.put_line( 'cliente disponible');
 --Insertamos una fila en la tabla de reservas para el cliente, vehículo e intervalo de fechas pasado como argumento. En esta operación deberíamos ser capaces de detectar si el cliente no existe, en cuyo caso lanzaremos la excepción -20001, con el mensaje 'Cliente inexistente'.
 INSERT INTO reservas  
 (cliente, matricula, fecha_ini,fecha_fin)  
 VALUES  
 (arg_NIF_cliente, arg_matricula, arg_fecha_ini, arg_fecha_fin );   
-
+ dbms_output.put_line( 'insercion realizada');
 end if;
 
 
 
 
 end if;
- 
- 
 else
-RAISE importe_mal;
+raise_application_error(-20003, 'El numero de dias sera mayor que cero');
 end if;
+  exception  
+   WHEN e_invalid_cliente THEN
+   
+    dbms_output.put_line('cliente inexistente');
+   WHEN e_invalid_vehiculo THEN
+   
+    dbms_output.put_line('vehiculo inexistente');
 
-exception
+WHEN e_invalid_reserva THEN
+   
+    dbms_output.put_line('reserva existente'); 
     when others then
-      if sqlcode=-20003 then
-          dbms_output.put_line('MAL: El numero de dias sera mayor que cero '||sqlcode||' '||sqlerrm);
+       if sqlcode=-20003 then
+        dbms_output.put_line('El numero de dias sera mayor que cero');
+     
       end if;
 
-
-
-  null;
 end;
 /
 
@@ -291,8 +309,7 @@ begin
     fila varchar(200);
   begin
     inicializa_test;
-    alquilar('12345678A', '2222-ABC', date '2013-3-11', date '2013-3-13');
-    
+  
     SELECT listAgg(nroFactura||matricula||fecha_ini||fecha_fin||facturas.importe||cliente
 								||concepto||lineas_factura.importe, '#')
             within group (order by nroFactura, concepto)
@@ -321,3 +338,7 @@ end;
 
 set serveroutput on
 exec test_alquila_coches;
+
+
+
+
