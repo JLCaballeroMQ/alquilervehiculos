@@ -37,7 +37,7 @@ rollback;
 RAISE e_invalid_vehiculo;
 end if;  
  --punto 3
- select count(*) into v_countReservas from reservas where arg_matricula=reservas.matricula;
+ select count(*) into v_countReservas from reservas where arg_matricula=reservas.matricula AND fecha_ini=arg_fecha_ini and fecha_fin=arg_fecha_fin;
  
 if v_countReservas != 0
 then
@@ -60,10 +60,20 @@ else
  dbms_output.put_line( 'cliente disponible');
 --Insertamos una fila en la tabla de reservas para el cliente, vehículo e intervalo de fechas pasado como argumento. En esta operación deberíamos ser capaces de detectar si el cliente no existe, en cuyo caso lanzaremos la excepción -20001, con el mensaje 'Cliente inexistente'.
 INSERT INTO reservas  
-(cliente, matricula, fecha_ini,fecha_fin)  
+(idReserva,cliente, matricula, fecha_ini,fecha_fin)  
 VALUES  
-(arg_NIF_cliente, arg_matricula, arg_fecha_ini, arg_fecha_fin );   
+(seq_reservas.NEXTVAL,arg_NIF_cliente, arg_matricula, arg_fecha_ini, arg_fecha_fin );   
  dbms_output.put_line( 'insercion realizada');
+ --punto 5  Se crea una factura correspondiente a alquilar al cliente con ese NIF el vehículo con esa matrícula durante los días transcurridos: n_dias = fecha_fin – fecha_ini.
+--El campo importe de la factura se rellena con la suma de los importes de las líneas de
+--factura, que se crearán como se indica más adelante.
+ INSERT INTO facturas  
+(nroFactura,importe, cliente)  
+VALUES  
+(seq_num_fact.NEXTVAL,(SELECT
+    SUM(importe)
+FROM
+    lineas_factura where lineas_factura=nroFactura)  ,arg_NIF_cliente );   
 end if;
 
 
