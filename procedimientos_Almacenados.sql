@@ -9,14 +9,31 @@ create or replace procedure alquilar(arg_NIF_cliente varchar,
    e_invalid_vehiculo EXCEPTION;
    e_invalid_reserva EXCEPTION;
   Importe_mal EXCEPTION;
+   importe_factura integer;
+   numero_Dias number := 0;
   v_countReservas number := 0;
  v_countClientes number := 0;
 varNumvehiculos number := 0;
+precioDia integer;
 begin
 --Punto(1) Se Comprueba que la fecha de inicio pasada como argumento no es posterior a la fecha fin En caso contrario devolverá el error -20003 con el mensaje 'El numero de dias sera mayor que cero.'
 if(arg_fecha_ini< arg_fecha_fin) then
+
  dbms_output.put_line( 'inicio');
 -- Punto 2 SELECT con un par de joins para saber el valor del modelo del vehículo pasado como argumento, el prcio de alquilarlo diariamente, la capacidad de su depósito de combustible, el tipo de combustible que utiliza y el precio por litro del mismo
+select modelos.precio_cada_dia into precioDia 
+from vehiculos
+inner join modelos
+on 
+modelos.id_modelo = vehiculos.id_modelo
+inner join precio_combustible
+on 
+modelos.tipo_combustible = precio_combustible.tipo_combustible
+where vehiculos.matricula = arg_matricula;
+
+  dbms_output.put_line('precio');
+ dbms_output.put_line(precioDia);
+  
 select count(*) INTO  varNumvehiculos
 from vehiculos
 inner join modelos
@@ -67,18 +84,24 @@ VALUES
  --punto 5  Se crea una factura correspondiente a alquilar al cliente con ese NIF el vehículo con esa matrícula durante los días transcurridos: n_dias = fecha_fin – fecha_ini.
 --El campo importe de la factura se rellena con la suma de los importes de las líneas de
 --factura, que se crearán como se indica más adelante.
+
  INSERT INTO facturas  
 (nroFactura,importe, cliente)  
 VALUES  
 (seq_num_fact.NEXTVAL,(SELECT
     SUM(importe)
 FROM
-    lineas_factura where lineas_factura=nroFactura)  ,arg_NIF_cliente );   
+    lineas_factura where lineas_factura.nroFactura=nroFactura)  ,arg_NIF_cliente );   
 end if;
+ dbms_output.put_line( 'factura creada');
+  numero_Dias:= arg_fecha_fin- arg_fecha_ini;
+   dbms_output.put_line(  numero_Dias);
+INSERT INTO lineas_factura  
+(nroFactura,concepto, importe)  
+VALUES  
+(seq_num_fact.NEXTVAL-1,'alquiler vehículo',numero_Dias*precioDia  );   
 
-
-
-
+   dbms_output.put_line(  'linea de factura creada');
 end if;
 else
 raise_application_error(-20003, 'El numero de dias sera mayor que cero');
